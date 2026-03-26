@@ -10,9 +10,212 @@ local camera = Workspace.CurrentCamera
 
 local guiName = "GuiViolenceDistrict"
 local killerNames = {["abysswalker"]=true,["hidden"]=true,["jason"]=true,["jeff"]=true,["masked"]=true,["myers"]=true}
-local ANTI_DAMAGE_DISTANCE = 40
 local DEV_ONLY = (RunService:IsStudio() or (game.CreatorType == Enum.CreatorType.User and game.CreatorId == player.UserId))
 
+-- ================== ESP SYSTEM (ON/OFF) ==================
+local espEnabled = false
+local espLineEnabled = false
+local espBoxes = {}
+local espTexts = {}
+local espLines = {}
+local espBoxColor = Color3.fromRGB(0, 255, 0) -- Hijau
+
+-- Fungsi ESP
+local function createESP(plr)
+    if plr == player then return end
+    
+    local box = Drawing.new("Square")
+    box.Thickness = 2
+    box.Color = espBoxColor
+    box.Filled = false
+    box.Visible = false
+    
+    local name = Drawing.new("Text")
+    name.Size = 14
+    name.Color = Color3.fromRGB(255, 255, 255)
+    name.Center = true
+    name.Outline = true
+    name.OutlineColor = Color3.fromRGB(0, 0, 0)
+    name.Visible = false
+    
+    local line = Drawing.new("Line")
+    line.Thickness = 2
+    line.Color = Color3.fromRGB(255, 100, 0)
+    line.Visible = false
+    
+    espBoxes[plr] = {box, name, line}
+end
+
+local function updateESP()
+    for pl, esp in pairs(espBoxes) do
+        local box, name, line = unpack(esp)
+        local char = pl.Character
+        if char and char:FindFirstChild("HumanoidRootPart") and char:FindFirstChild("Head") then
+            local hrp = char.HumanoidRootPart
+            local head = char.Head
+            local pos, visible = camera:WorldToViewportPoint(hrp.Position)
+            
+            if visible then
+                local top = camera:WorldToViewportPoint(head.Position + Vector3.new(0, 0.5, 0))
+                local bottom = camera:WorldToViewportPoint(hrp.Position - Vector3.new(0, 3, 0))
+                local height = math.abs(top.Y - bottom.Y)
+                local width = height / 2
+                
+                if espEnabled then
+                    -- Box
+                    box.Size = Vector2.new(width, height)
+                    box.Position = Vector2.new(pos.X - width/2, top.Y)
+                    box.Visible = true
+                    
+                    -- Name
+                    name.Position = Vector2.new(pos.X, top.Y - 16)
+                    name.Text = pl.Name
+                    name.Visible = true
+                    
+                    -- Line (dari bawah ke target)
+                    if espLineEnabled then
+                        line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                        line.To = Vector2.new(pos.X, pos.Y)
+                        line.Visible = true
+                    else
+                        line.Visible = false
+                    end
+                else
+                    box.Visible = false
+                    name.Visible = false
+                    line.Visible = false
+                end
+            else
+                box.Visible = false
+                name.Visible = false
+                line.Visible = false
+            end
+        end
+    end
+end
+
+-- Render untuk ESP
+RunService.RenderStepped:Connect(updateESP)
+
+-- Inisialisasi ESP untuk semua player
+for _, p in pairs(Players:GetPlayers()) do
+    createESP(p)
+end
+
+Players.PlayerAdded:Connect(function(p)
+    createESP(p)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if espBoxes[p] then
+        for _, drawing in pairs(espBoxes[p]) do
+            pcall(function() drawing:Remove() end)
+        end
+        espBoxes[p] = nil
+    end
+end)
+
+-- ================== ANTI DAMAGE (SUPER FIXED DARI DRIP) ==================
+local antiDamageEnabled = false
+local antiDamageConnection = nil
+local antiDamageThread = nil
+local antiDamageHeartbeat = nil
+local lastHealth = nil
+
+local function setupAntiDamage()
+    -- Matikan semua koneksi lama
+    if antiDamageConnection then
+        antiDamageConnection:Disconnect()
+        antiDamageConnection = nil
+    end
+    
+    if antiDamageHeartbeat then
+        antiDamageHeartbeat:Disconnect()
+        antiDamageHeartbeat = nil
+    end
+    
+    if antiDamageThread then
+        antiDamageThread = nil
+    end
+    
+    -- 1. Heartbeat loop (sangat cepat)
+    antiDamageHeartbeat = RunService.Heartbeat:Connect(function()
+        if antiDamageEnabled and player.Character then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                -- Paksa health ke max setiap saat
+                if humanoid.Health < humanoid.MaxHealth then
+                    humanoid.Health = humanoid.MaxHealth
+                end
+                -- Cegah death
+                if humanoid.Health <= 0 then
+                    humanoid.Health = humanoid.MaxHealth
+                end
+            end
+        end
+    end)
+    
+    -- 2. Thread terpisah dengan delay lebih cepat (0.001 detik)
+    antiDamageThread = task.spawn(function()
+        while antiDamageEnabled do
+            task.wait(0.001) -- Super cepat!
+            pcall(function()
+                if player.Character then
+                    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+                    if humanoid and humanoid.Health < humanoid.MaxHealth then
+                        humanoid.Health = humanoid.MaxHealth
+                    end
+                end
+            end)
+        end
+    end)
+    
+    -- 3. HealthChanged event (responsif terhadap perubahan health)
+    local function onHealthChanged()
+        if antiDamageEnabled and player.Character then
+            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
+            if humanoid then
+                humanoid.HealthChanged:Connect(function(newHealth)
+                    if antiDamageEnabled and newHealth < humanoid.MaxHealth then
+                        humanoid.Health = humanoid.MaxHealth
+                    end
+                end)
+            end
+        end
+    end
+    
+    -- Panggil saat karakter ada
+    if player.Character then
+        onHealthChanged()
+    end
+    
+    -- 4. Saat karakter berganti
+    player.CharacterAdded:Connect(function(char)
+        task.wait(0.5)
+        if antiDamageEnabled then
+            onHealthChanged()
+        end
+    end)
+    
+    print("✅ GOD MODE AKTIF - Anti one-hit kill!")
+end
+
+local function disableAntiDamage()
+    if antiDamageHeartbeat then
+        antiDamageHeartbeat:Disconnect()
+        antiDamageHeartbeat = nil
+    end
+    if antiDamageConnection then
+        antiDamageConnection:Disconnect()
+        antiDamageConnection = nil
+    end
+    if antiDamageThread then
+        antiDamageThread = nil
+    end
+    print("❌ GOD MODE OFF - Proteksi dimatikan")
+end
+
+-- ================== FITUR LAIN (TETAP SAMA) ==================
 local pg = player:WaitForChild("PlayerGui")
 if pg:FindFirstChild(guiName) then pg[guiName]:Destroy() end
 
@@ -24,8 +227,8 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 190, 0, 360)
-main.Position = UDim2.new(0.5, -95, 0.5, -180)
+main.Size = UDim2.new(0, 210, 0, 500)
+main.Position = UDim2.new(0.5, -105, 0.5, -250)
 main.AnchorPoint = Vector2.new(0.5, 0.5)
 main.BackgroundColor3 = Color3.fromRGB(18,18,18)
 main.BorderSizePixel = 0
@@ -35,10 +238,10 @@ main.Draggable = true
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
 
 main.BackgroundTransparency = 1
-main.Position = UDim2.new(0.5, -95, 0.5, -200)
+main.Position = UDim2.new(0.5, -105, 0.5, -270)
 TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 	BackgroundTransparency = 0,
-	Position = UDim2.new(0.5, -95, 0.5, -180)
+	Position = UDim2.new(0.5, -105, 0.5, -250)
 }):Play()
 
 local title = Instance.new("TextLabel", main)
@@ -86,6 +289,33 @@ local function makeButton(text, parent)
 	return b
 end
 
+-- ================== TOGGLE ESP ==================
+local espToggleState = false
+makeButton("ESP ON/OFF", scroll).MouseButton1Click:Connect(function()
+    espEnabled = not espEnabled
+    print("ESP " .. (espEnabled and "ON" or "OFF"))
+end)
+
+-- ================== TOGGLE ESP LINE ==================
+local espLineToggleState = false
+makeButton("ESP Line ON/OFF", scroll).MouseButton1Click:Connect(function()
+    espLineEnabled = not espLineEnabled
+    print("ESP Line " .. (espLineEnabled and "ON" or "OFF"))
+end)
+
+-- ================== TOGGLE ANTI DAMAGE (DARI DRIP) ==================
+makeButton("AntiDamage (GodMode)", scroll).MouseButton1Click:Connect(function()
+    antiDamageEnabled = not antiDamageEnabled
+    if antiDamageEnabled then
+        setupAntiDamage()
+        print("✅ GOD MODE AKTIF - Anti one-hit kill!")
+    else
+        disableAntiDamage()
+        print("❌ GOD MODE OFF - Proteksi dimatikan")
+    end
+end)
+
+-- ================== FITUR ASLI (TIDAK DIUBAH) ==================
 local function findRootForDesc(desc)
 	if not desc then return nil end
 	if desc:IsA("BasePart") then return desc end
@@ -113,8 +343,6 @@ end
 local highlights = {}
 local smartProxies = {}
 local noclipConn = nil
-local antiDamageEnabled = false
-local lastHealth = nil
 local antiConn = nil
 
 -- Nama-nama generator dan hook yang valid
@@ -269,7 +497,12 @@ makeButton("ShiftLock", scroll).MouseButton1Click:Connect(function()
 end)
 
 makeButton("Noclip", scroll).MouseButton1Click:Connect(function()
-	if noclipConn then return end
+	if noclipConn then 
+        noclipConn:Disconnect()
+        noclipConn = nil
+        print("Noclip OFF")
+        return 
+    end
 	noclipConn = RunService.Stepped:Connect(function()
 		if player.Character then
 			for _,p in ipairs(player.Character:GetDescendants()) do
@@ -277,6 +510,7 @@ makeButton("Noclip", scroll).MouseButton1Click:Connect(function()
 			end
 		end
 	end)
+    print("Noclip ON")
 end)
 
 makeButton("NoHitbox", scroll).MouseButton1Click:Connect(function()
@@ -324,70 +558,6 @@ makeButton("AntiStun", scroll).MouseButton1Click:Connect(function()
 		end
 	end)
 	delay(5,function() if conn and conn.Connected then conn:Disconnect() end end)
-end)
-
-makeButton("AntiDamage", scroll).MouseButton1Click:Connect(function()
-	antiDamageEnabled = not antiDamageEnabled
-	if antiDamageEnabled and not antiConn then
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then lastHealth = hum.Health end
-		antiConn = RunService.Heartbeat:Connect(function()
-			local hum2 = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-			if not hum2 then return end
-			if lastHealth == nil then lastHealth = hum2.Health; return end
-			if hum2.Health < lastHealth then
-				if DEV_ONLY then
-					local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-					if hrp then
-						local nearestKiller, kd = nil, math.huge
-						for _, pl in ipairs(Players:GetPlayers()) do
-							if pl ~= player and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-								local nm = string.lower(pl.Name or "")
-								if killerNames[nm] or string.find(nm,"killer") then
-									local otherHRP = pl.Character:FindFirstChild("HumanoidRootPart")
-									if otherHRP then
-										local d = (otherHRP.Position - hrp.Position).Magnitude
-										if d < kd then kd = d; nearestKiller = otherHRP end
-									end
-								end
-							end
-						end
-						local escapeCFrame
-						if nearestKiller then
-							local dir = (hrp.Position - nearestKiller.Position)
-							if dir.Magnitude < 1 then dir = Vector3.new(0,0,1) end
-							dir = dir.Unit
-							escapeCFrame = CFrame.new(hrp.Position + dir*ANTI_DAMAGE_DISTANCE, hrp.Position + dir*ANTI_DAMAGE_DISTANCE + Vector3.new(0,1,0))
-						else
-							local look = camera and Vector3.new(camera.CFrame.LookVector.X,0,camera.CFrame.LookVector.Z) or Vector3.new(0,0,-1)
-							if look.Magnitude<0.001 then look = Vector3.new(0,0,-1) end
-							escapeCFrame = CFrame.new(hrp.Position - look.Unit*ANTI_DAMAGE_DISTANCE, hrp.Position - look.Unit*ANTI_DAMAGE_DISTANCE + Vector3.new(0,1,0))
-						end
-						if hrp then hrp.CFrame = escapeCFrame + Vector3.new(0,3,0) end
-					end
-				else
-					local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-					if hrp then
-						local marker = Instance.new("Part")
-						marker.Name = "EscapeMarker"
-						marker.Size = Vector3.new(2,2,2)
-						marker.Anchored = true
-						marker.CanCollide = false
-						marker.Transparency = 0.5
-						marker.Material = Enum.Material.Neon
-						marker.Color = Color3.fromRGB(255,170,0)
-						marker.CFrame = hrp.CFrame - camera.CFrame.LookVector.Unit*ANTI_DAMAGE_DISTANCE + Vector3.new(0,3,0)
-						marker.Parent = Workspace
-						delay(1.2,function() if marker and marker.Parent then marker:Destroy() end end)
-					end
-				end
-			end
-			lastHealth = hum2.Health
-		end)
-	else
-		if antiConn then antiConn:Disconnect(); antiConn=nil end
-		antiDamageEnabled=false
-	end
 end)
 
 makeButton("NoShadow", scroll).MouseButton1Click:Connect(function()
@@ -505,7 +675,7 @@ minimizeBtn.MouseButton1Click:Connect(function()
 		scroll.Visible=false
 		title.Text="VD PZ"
 	else
-		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,190,0,360)}):Play()
+		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,210,0,500)}):Play()
 		scroll.Visible=true
 		title.Text="VD Putzzdev"
 	end
@@ -518,4 +688,17 @@ end)
 player.CharacterRemoving:Connect(function()
 	for _,p in pairs(smartProxies) do if p and p.Parent then p:Destroy() end end
 	smartProxies={}
+    if noclipConn then
+        noclipConn:Disconnect()
+        noclipConn = nil
+    end
+    if antiDamageHeartbeat then
+        antiDamageHeartbeat:Disconnect()
+        antiDamageHeartbeat = nil
+    end
+    if antiDamageThread then
+        antiDamageThread = nil
+    end
 end)
+
+print("✅ VD Putzzdev")
