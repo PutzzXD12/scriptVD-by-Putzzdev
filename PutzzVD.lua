@@ -13,8 +13,8 @@ local killerNames = {["abysswalker"]=true,["hidden"]=true,["jason"]=true,["jeff"
 local DEV_ONLY = (RunService:IsStudio() or (game.CreatorType == Enum.CreatorType.User and game.CreatorId == player.UserId))
 
 -- ================== ESP SYSTEM (ON/OFF) ==================
-local espEnabled = false
-local espLineEnabled = false
+local espEnabled = true
+local espLineEnabled = true
 local espBoxes = {}
 local espTexts = {}
 local espLines = {}
