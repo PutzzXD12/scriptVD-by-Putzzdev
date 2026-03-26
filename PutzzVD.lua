@@ -110,22 +110,22 @@ local function createHighlight(target, color)
 	return h
 end
 
--- ==================== ESP LANE (LINE ESP) ====================
+-- ==================== ESP LANE (GARIS PUTIH DARI KAMERA KE PLAYER) ====================
 local lineESPObjects = {}
 local lineESPEnabled = false
-local lineESPColor = Color3.fromRGB(0, 255, 150) -- Hijau muda
+local lineESPColor = Color3.fromRGB(255, 255, 255) -- PUTIH
 
-local function createLineESP(target)
-	if not target or not target.Parent then return nil end
-	local hrp = target:FindFirstChild("HumanoidRootPart") or target:FindFirstChildWhichIsA("BasePart")
+local function createLineESP(targetPlayer)
+	if not targetPlayer or not targetPlayer.Character then return nil end
+	local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
 	if not hrp then return nil end
 	
-	-- Buat garis dari kamera ke target
+	-- Buat garis menggunakan SelectionBox dengan efek garis tipis (kayak tracer)
 	local line = Instance.new("SelectionBox")
 	line.Adornee = hrp
-	line.LineThickness = 2
+	line.LineThickness = 1.5
 	line.Color3 = lineESPColor
-	line.Transparency = 0.5
+	line.Transparency = 0.3
 	line.Parent = hrp
 	
 	return line
@@ -133,7 +133,8 @@ end
 
 local function updateLineESP()
 	while lineESPEnabled do
-		task.wait(0.1)
+		task.wait(0.05) -- Update lebih cepat biar garis responsif
+		
 		-- Hapus garis lama
 		for _, obj in pairs(lineESPObjects) do
 			pcall(function() if obj and obj.Parent then obj:Destroy() end end)
@@ -143,11 +144,8 @@ local function updateLineESP()
 		-- Buat garis ke setiap player (kecuali diri sendiri)
 		for _, pl in ipairs(Players:GetPlayers()) do
 			if pl ~= player and pl.Character then
-				local hrp = pl.Character:FindFirstChild("HumanoidRootPart")
-				if hrp then
-					local line = createLineESP(pl.Character)
-					if line then table.insert(lineESPObjects, line) end
-				end
+				local line = createLineESP(pl)
+				if line then table.insert(lineESPObjects, line) end
 			end
 		end
 	end
@@ -160,7 +158,7 @@ local espStates = {
 	players = false,
 	killer = false,
 	hook = false,
-	lane = false,  -- ESP Lane (Line ESP)
+	lane = false,
 }
 
 local function clearHighlights()
@@ -173,14 +171,12 @@ end
 local function refreshESP()
 	clearHighlights()
 	
-	-- ESP Generator
 	if espStates.generator then
 		for _,root in ipairs(collectGenerators()) do
 			highlights[root] = createHighlight(root, Color3.fromRGB(255,200,0))
 		end
 	end
 	
-	-- ESP Players (Highlight biasa)
 	if espStates.players then
 		for _,pl in ipairs(Players:GetPlayers()) do
 			if pl ~= player and pl.Character then
@@ -189,7 +185,6 @@ local function refreshESP()
 		end
 	end
 	
-	-- ESP Killer
 	if espStates.killer then
 		for _,pl in ipairs(Players:GetPlayers()) do
 			local nm = string.lower(pl.Name or "")
@@ -199,7 +194,6 @@ local function refreshESP()
 		end
 	end
 	
-	-- ESP Hook
 	if espStates.hook then
 		for _,hook in ipairs(collectHooks()) do
 			highlights[hook] = createHighlight(hook, Color3.fromRGB(255,255,0))
@@ -269,7 +263,7 @@ local function safeTeleportTo(part)
 end
 
 -- ==================== BUTTON FITUR ====================
--- ESP Generator (Toggle style)
+-- ESP Generator (Toggle)
 local espGenBtn = makeButton("ESP Generator: OFF", scroll)
 espGenBtn.MouseButton1Click:Connect(function()
 	espStates.generator = not espStates.generator
@@ -278,7 +272,7 @@ espGenBtn.MouseButton1Click:Connect(function()
 	refreshESP()
 end)
 
--- ESP Players (Toggle style)
+-- ESP Players (Toggle)
 local espPlayerBtn = makeButton("ESP Players: OFF", scroll)
 espPlayerBtn.MouseButton1Click:Connect(function()
 	espStates.players = not espStates.players
@@ -287,11 +281,11 @@ espPlayerBtn.MouseButton1Click:Connect(function()
 	refreshESP()
 end)
 
--- ESP LANE (Line ESP) - Toggle style, bisa aktif BERSAMAAN dengan ESP Players
-local espLaneBtn = makeButton("ESP Lane (Line): OFF", scroll)
+-- ESP LANE (GARIS PUTIH) - Toggle, bisa aktif BERSAMAAN dengan ESP Players
+local espLaneBtn = makeButton("ESP Lane: OFF", scroll)
 espLaneBtn.MouseButton1Click:Connect(function()
 	espStates.lane = not espStates.lane
-	espLaneBtn.Text = espStates.lane and "ESP Lane (Line): ON" or "ESP Lane (Line): OFF"
+	espLaneBtn.Text = espStates.lane and "ESP Lane: ON" or "ESP Lane: OFF"
 	espLaneBtn.BackgroundColor3 = espStates.lane and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
 	
 	if espStates.lane then
@@ -306,7 +300,7 @@ espLaneBtn.MouseButton1Click:Connect(function()
 	end
 end)
 
--- ESP Killer (Toggle style)
+-- ESP Killer (Toggle)
 local espKillerBtn = makeButton("ESP Killer: OFF", scroll)
 espKillerBtn.MouseButton1Click:Connect(function()
 	espStates.killer = not espStates.killer
@@ -315,7 +309,7 @@ espKillerBtn.MouseButton1Click:Connect(function()
 	refreshESP()
 end)
 
--- ESP Hook (Toggle style)
+-- ESP Hook (Toggle)
 local espHookBtn = makeButton("ESP Hook: OFF", scroll)
 espHookBtn.MouseButton1Click:Connect(function()
 	espStates.hook = not espStates.hook
@@ -326,26 +320,23 @@ end)
 
 -- Clear All ESP
 makeButton("Clear All ESP", scroll, Color3.fromRGB(80,50,50)).MouseButton1Click:Connect(function()
-	-- Matikan semua toggle
 	espStates.generator = false
 	espStates.players = false
 	espStates.killer = false
 	espStates.hook = false
 	espStates.lane = false
 	
-	-- Update tampilan tombol
 	espGenBtn.Text = "ESP Generator: OFF"
 	espGenBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	espPlayerBtn.Text = "ESP Players: OFF"
 	espPlayerBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	espLaneBtn.Text = "ESP Lane (Line): OFF"
+	espLaneBtn.Text = "ESP Lane: OFF"
 	espLaneBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	espKillerBtn.Text = "ESP Killer: OFF"
 	espKillerBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	espHookBtn.Text = "ESP Hook: OFF"
 	espHookBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	
-	-- Hapus semua ESP
 	clearHighlights()
 	lineESPEnabled = false
 	for _, obj in pairs(lineESPObjects) do
@@ -354,7 +345,7 @@ makeButton("Clear All ESP", scroll, Color3.fromRGB(80,50,50)).MouseButton1Click:
 	lineESPObjects = {}
 end)
 
--- ==================== FITUR LAINNYA (Tetap sama) ====================
+-- ==================== FITUR LAINNYA ====================
 makeButton("To Generator (Random)", scroll).MouseButton1Click:Connect(function()
 	local matches = collectGenerators()
 	if #matches > 0 then safeTeleportTo(matches[math.random(1,#matches)]) end
@@ -664,4 +655,4 @@ player.CharacterRemoving:Connect(function()
 	lineESPObjects = {}
 end)
 
-print("VD Putzzdev + ESP Lane (Line ESP) Loaded!")
+print("VD Putzzdev + ESP Lane (Garis Putih) Loaded!")
