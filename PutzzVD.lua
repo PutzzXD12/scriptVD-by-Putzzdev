@@ -24,8 +24,8 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 190, 0, 400)
-main.Position = UDim2.new(0.5, -95, 0.5, -200)
+main.Size = UDim2.new(0, 190, 0, 420)
+main.Position = UDim2.new(0.5, -95, 0.5, -210)
 main.AnchorPoint = Vector2.new(0.5, 0.5)
 main.BackgroundColor3 = Color3.fromRGB(18,18,18)
 main.BorderSizePixel = 0
@@ -35,10 +35,10 @@ main.Draggable = true
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
 
 main.BackgroundTransparency = 1
-main.Position = UDim2.new(0.5, -95, 0.5, -220)
+main.Position = UDim2.new(0.5, -95, 0.5, -230)
 TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 	BackgroundTransparency = 0,
-	Position = UDim2.new(0.5, -95, 0.5, -200)
+	Position = UDim2.new(0.5, -95, 0.5, -210)
 }):Play()
 
 local title = Instance.new("TextLabel", main)
@@ -110,46 +110,71 @@ local function createHighlight(target, color)
 	return h
 end
 
--- ==================== ESP LANE (GARIS PUTIH DARI KAMERA KE PLAYER) ====================
-local lineESPObjects = {}
-local lineESPEnabled = false
-local lineESPColor = Color3.fromRGB(255, 255, 255) -- PUTIH
+-- ================== ESP LINE (DRIP STYLE) ==================
+local espLineEnabled = false
+local espLines = {}
+local espLineColor = Color3.fromRGB(255, 255, 255) -- Putih
 
-local function createLineESP(targetPlayer)
-	if not targetPlayer or not targetPlayer.Character then return nil end
-	local hrp = targetPlayer.Character:FindFirstChild("HumanoidRootPart")
-	if not hrp then return nil end
-	
-	-- Buat garis menggunakan SelectionBox dengan efek garis tipis (kayak tracer)
-	local line = Instance.new("SelectionBox")
-	line.Adornee = hrp
-	line.LineThickness = 1.5
-	line.Color3 = lineESPColor
-	line.Transparency = 0.3
-	line.Parent = hrp
-	
-	return line
+-- Fungsi membuat ESP Line
+local function createESPLine(plr)
+    if plr == player then return end
+    
+    local line = Drawing.new("Line")
+    line.Thickness = 2
+    line.Color = espLineColor
+    line.Visible = false
+    
+    espLines[plr] = line
 end
 
-local function updateLineESP()
-	while lineESPEnabled do
-		task.wait(0.05) -- Update lebih cepat biar garis responsif
-		
-		-- Hapus garis lama
-		for _, obj in pairs(lineESPObjects) do
-			pcall(function() if obj and obj.Parent then obj:Destroy() end end)
-		end
-		lineESPObjects = {}
-		
-		-- Buat garis ke setiap player (kecuali diri sendiri)
-		for _, pl in ipairs(Players:GetPlayers()) do
-			if pl ~= player and pl.Character then
-				local line = createLineESP(pl)
-				if line then table.insert(lineESPObjects, line) end
-			end
-		end
-	end
+-- Update ESP Line
+local function updateESPLine()
+    if not espLineEnabled then
+        -- Sembunyikan semua garis
+        for _, line in pairs(espLines) do
+            if line then line.Visible = false end
+        end
+        return
+    end
+    
+    for pl, line in pairs(espLines) do
+        local char = pl.Character
+        if char and char:FindFirstChild("HumanoidRootPart") then
+            local hrp = char.HumanoidRootPart
+            local pos, visible = camera:WorldToViewportPoint(hrp.Position)
+            
+            if visible then
+                -- Line dari bawah layar ke target (seperti Drip)
+                line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
+                line.To = Vector2.new(pos.X, pos.Y)
+                line.Visible = true
+            else
+                line.Visible = false
+            end
+        else
+            line.Visible = false
+        end
+    end
 end
+
+-- Inisialisasi ESP Line untuk semua player
+for _, p in pairs(Players:GetPlayers()) do
+    createESPLine(p)
+end
+
+Players.PlayerAdded:Connect(function(p)
+    createESPLine(p)
+end)
+
+Players.PlayerRemoving:Connect(function(p)
+    if espLines[p] then
+        pcall(function() espLines[p]:Remove() end)
+        espLines[p] = nil
+    end
+end)
+
+-- Render untuk ESP Line
+RunService.RenderStepped:Connect(updateESPLine)
 
 -- ==================== VARIABEL ESP TOGGLE ====================
 local highlights = {}
@@ -158,7 +183,7 @@ local espStates = {
 	players = false,
 	killer = false,
 	hook = false,
-	lane = false,
+	lane = false,  -- ESP Line (Drip)
 }
 
 local function clearHighlights()
@@ -171,12 +196,14 @@ end
 local function refreshESP()
 	clearHighlights()
 	
+	-- ESP Generator
 	if espStates.generator then
 		for _,root in ipairs(collectGenerators()) do
 			highlights[root] = createHighlight(root, Color3.fromRGB(255,200,0))
 		end
 	end
 	
+	-- ESP Players (Highlight biasa)
 	if espStates.players then
 		for _,pl in ipairs(Players:GetPlayers()) do
 			if pl ~= player and pl.Character then
@@ -185,6 +212,7 @@ local function refreshESP()
 		end
 	end
 	
+	-- ESP Killer
 	if espStates.killer then
 		for _,pl in ipairs(Players:GetPlayers()) do
 			local nm = string.lower(pl.Name or "")
@@ -194,6 +222,7 @@ local function refreshESP()
 		end
 	end
 	
+	-- ESP Hook
 	if espStates.hook then
 		for _,hook in ipairs(collectHooks()) do
 			highlights[hook] = createHighlight(hook, Color3.fromRGB(255,255,0))
@@ -281,23 +310,14 @@ espPlayerBtn.MouseButton1Click:Connect(function()
 	refreshESP()
 end)
 
--- ESP LANE (GARIS PUTIH) - Toggle, bisa aktif BERSAMAAN dengan ESP Players
+-- ESP Lane (Drip Style) - Toggle
 local espLaneBtn = makeButton("ESP Lane: OFF", scroll)
 espLaneBtn.MouseButton1Click:Connect(function()
 	espStates.lane = not espStates.lane
 	espLaneBtn.Text = espStates.lane and "ESP Lane: ON" or "ESP Lane: OFF"
 	espLaneBtn.BackgroundColor3 = espStates.lane and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
 	
-	if espStates.lane then
-		lineESPEnabled = true
-		coroutine.wrap(updateLineESP)()
-	else
-		lineESPEnabled = false
-		for _, obj in pairs(lineESPObjects) do
-			pcall(function() if obj and obj.Parent then obj:Destroy() end end)
-		end
-		lineESPObjects = {}
-	end
+	espLineEnabled = espStates.lane
 end)
 
 -- ESP Killer (Toggle)
@@ -320,12 +340,14 @@ end)
 
 -- Clear All ESP
 makeButton("Clear All ESP", scroll, Color3.fromRGB(80,50,50)).MouseButton1Click:Connect(function()
+	-- Matikan semua toggle
 	espStates.generator = false
 	espStates.players = false
 	espStates.killer = false
 	espStates.hook = false
 	espStates.lane = false
 	
+	-- Update tampilan tombol
 	espGenBtn.Text = "ESP Generator: OFF"
 	espGenBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	espPlayerBtn.Text = "ESP Players: OFF"
@@ -337,12 +359,9 @@ makeButton("Clear All ESP", scroll, Color3.fromRGB(80,50,50)).MouseButton1Click:
 	espHookBtn.Text = "ESP Hook: OFF"
 	espHookBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	
+	-- Hapus semua ESP
 	clearHighlights()
-	lineESPEnabled = false
-	for _, obj in pairs(lineESPObjects) do
-		pcall(function() if obj and obj.Parent then obj:Destroy() end end)
-	end
-	lineESPObjects = {}
+	espLineEnabled = false
 end)
 
 -- ==================== FITUR LAINNYA ====================
@@ -633,7 +652,7 @@ minimizeBtn.MouseButton1Click:Connect(function()
 		scroll.Visible=false
 		title.Text="VD PZ"
 	else
-		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,190,0,400)}):Play()
+		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,190,0,420)}):Play()
 		scroll.Visible=true
 		title.Text="VD Putzzdev"
 	end
@@ -648,11 +667,11 @@ player.CharacterRemoving:Connect(function()
 	smartProxies={}
 	if noclipConn then noclipConn:Disconnect() noclipConn = nil end
 	if antiConn then antiConn:Disconnect() antiConn = nil end
-	lineESPEnabled = false
-	for _, obj in pairs(lineESPObjects) do
-		pcall(function() if obj and obj.Parent then obj:Destroy() end end)
+	espLineEnabled = false
+	for _, line in pairs(espLines) do
+		pcall(function() line:Remove() end)
 	end
-	lineESPObjects = {}
+	espLines = {}
 end)
 
-print("VD Putzzdev + ESP Lane (Garis Putih) Loaded!")
+print("VD Putzzdev + ESP Line (Drip Style) Loaded!")
