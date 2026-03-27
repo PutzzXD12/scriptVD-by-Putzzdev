@@ -24,8 +24,8 @@ screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
 
 local main = Instance.new("Frame")
 main.Name = "Main"
-main.Size = UDim2.new(0, 190, 0, 440)
-main.Position = UDim2.new(0.5, -95, 0.5, -220)
+main.Size = UDim2.new(0, 190, 0, 460)
+main.Position = UDim2.new(0.5, -95, 0.5, -230)
 main.AnchorPoint = Vector2.new(0.5, 0.5)
 main.BackgroundColor3 = Color3.fromRGB(18,18,18)
 main.BorderSizePixel = 0
@@ -35,10 +35,10 @@ main.Draggable = true
 Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
 
 main.BackgroundTransparency = 1
-main.Position = UDim2.new(0.5, -95, 0.5, -240)
+main.Position = UDim2.new(0.5, -95, 0.5, -250)
 TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 	BackgroundTransparency = 0,
-	Position = UDim2.new(0.5, -95, 0.5, -220)
+	Position = UDim2.new(0.5, -95, 0.5, -230)
 }):Play()
 
 local title = Instance.new("TextLabel", main)
@@ -113,7 +113,7 @@ end
 -- ================== ESP LINE (DRIP STYLE) ==================
 local espLineEnabled = false
 local espLines = {}
-local espLineColor = Color3.fromRGB(255, 255, 255) -- Putih
+local espLineColor = Color3.fromRGB(255, 255, 255)
 
 local function createESPLine(plr)
     if plr == player then return end
@@ -153,7 +153,6 @@ local function updateESPLine()
     end
 end
 
--- Inisialisasi ESP Line
 for _, p in pairs(Players:GetPlayers()) do
     createESPLine(p)
 end
@@ -173,27 +172,18 @@ RunService.RenderStepped:Connect(updateESPLine)
 
 -- ================== ANTI DAMAGE (DRIP STYLE) ==================
 local antiDamageEnabled = false
-local antiDamageConnection = nil
-local antiDamageThread = nil
 local antiDamageHeartbeat = nil
+local antiDamageThread = nil
 
 local function setupAntiDamage()
-    -- Matikan semua koneksi lama
-    if antiDamageConnection then
-        antiDamageConnection:Disconnect()
-        antiDamageConnection = nil
-    end
-    
     if antiDamageHeartbeat then
         antiDamageHeartbeat:Disconnect()
         antiDamageHeartbeat = nil
     end
-    
     if antiDamageThread then
         antiDamageThread = nil
     end
     
-    -- 1. Heartbeat loop (sangat cepat)
     antiDamageHeartbeat = RunService.Heartbeat:Connect(function()
         if antiDamageEnabled and player.Character then
             local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
@@ -208,7 +198,6 @@ local function setupAntiDamage()
         end
     end)
     
-    -- 2. Thread terpisah dengan delay lebih cepat (0.001 detik)
     antiDamageThread = task.spawn(function()
         while antiDamageEnabled do
             task.wait(0.001)
@@ -223,7 +212,6 @@ local function setupAntiDamage()
         end
     end)
     
-    -- 3. HealthChanged event
     local function onHealthChanged()
         if antiDamageEnabled and player.Character then
             local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
@@ -254,12 +242,161 @@ local function disableAntiDamage()
         antiDamageHeartbeat:Disconnect()
         antiDamageHeartbeat = nil
     end
-    if antiDamageConnection then
-        antiDamageConnection:Disconnect()
-        antiDamageConnection = nil
-    end
     if antiDamageThread then
         antiDamageThread = nil
+    end
+end
+
+-- ================== ANTI STUN (TOTAL PROTECTION) ==================
+local antiStunEnabled = false
+local antiStunConnections = {}
+local antiStunThread = nil
+
+local function setupAntiStun()
+    -- Matikan semua koneksi lama
+    for _, conn in pairs(antiStunConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    antiStunConnections = {}
+    if antiStunThread then
+        antiStunThread = nil
+    end
+    
+    -- Metode 1: StateChanged (cegah PlatformStanding dan Physics)
+    local function onStateChanged(_, newState)
+        if not antiStunEnabled then return end
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then
+            if newState == Enum.HumanoidStateType.PlatformStanding or 
+               newState == Enum.HumanoidStateType.Physics or
+               newState == Enum.HumanoidStateType.Stunned or
+               newState == Enum.HumanoidStateType.GettingUp or
+               newState == Enum.HumanoidStateType.FallingDown then
+                -- Paksa ke Running
+                hum:ChangeState(Enum.HumanoidStateType.Running)
+                hum.Sit = false
+                hum.PlatformStand = false
+            end
+        end
+    end
+    
+    -- Metode 2: Loop cepat cek dan reset setiap 0.01 detik
+    antiStunThread = task.spawn(function()
+        while antiStunEnabled do
+            task.wait(0.01)
+            pcall(function()
+                if player.Character then
+                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
+                    if hum then
+                        -- Cek state aneh
+                        local state = hum:GetState()
+                        if state == Enum.HumanoidStateType.PlatformStanding or
+                           state == Enum.HumanoidStateType.Physics or
+                           state == Enum.HumanoidStateType.Stunned or
+                           state == Enum.HumanoidStateType.GettingUp or
+                           state == Enum.HumanoidStateType.FallingDown then
+                            hum:ChangeState(Enum.HumanoidStateType.Running)
+                            hum.Sit = false
+                            hum.PlatformStand = false
+                        end
+                        
+                        -- Cegah agar tidak bisa di-grab/sling
+                        hum.Sit = false
+                        hum.PlatformStand = false
+                        
+                        -- Hapus constraints yang dipasang killer (sling, grab)
+                        for _, joint in ipairs(player.Character:GetDescendants()) do
+                            if joint:IsA("HingeConstraint") or 
+                               joint:IsA("RodConstraint") or 
+                               joint:IsA("RopeConstraint") or
+                               joint:IsA("WeldConstraint") then
+                                if not joint:IsDescendantOf(player.Character) then
+                                    joint:Destroy()
+                                end
+                            end
+                        end
+                    end
+                end
+            end)
+        end
+    end)
+    
+    -- Metode 3: StateChanged event (responsif)
+    local stateConn = nil
+    local function setupStateChanged()
+        if player.Character then
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                if stateConn then stateConn:Disconnect() end
+                stateConn = hum.StateChanged:Connect(onStateChanged)
+                table.insert(antiStunConnections, stateConn)
+            end
+        end
+    end
+    
+    setupStateChanged()
+    player.CharacterAdded:Connect(function()
+        task.wait(0.1)
+        setupStateChanged()
+    end)
+    
+    -- Metode 4: Hapus semua efek stun (partikel, efek visual)
+    local function removeStunEffects()
+        if not antiStunEnabled then return end
+        pcall(function()
+            if player.Character then
+                for _, v in ipairs(player.Character:GetDescendants()) do
+                    if v.Name:lower():find("stun") or 
+                       v.Name:lower():find("hit") or
+                       v.Name:lower():find("effect") or
+                       v:IsA("ParticleEmitter") or
+                       v:IsA("Attachment") then
+                        v:Destroy()
+                    end
+                end
+            end
+        end)
+    end
+    
+    local effectLoop = RunService.Heartbeat:Connect(function()
+        if antiStunEnabled then
+            removeStunEffects()
+        end
+    end)
+    table.insert(antiStunConnections, effectLoop)
+    
+    -- Metode 5: Cegah rotasi abnormal (ragdoll prevention)
+    local function fixRotation()
+        if not antiStunEnabled then return end
+        pcall(function()
+            if player.Character then
+                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
+                if hrp then
+                    local rot = hrp.Orientation
+                    if math.abs(rot.X) > 45 or math.abs(rot.Z) > 45 then
+                        hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Vector3.new(0, 1, 0))
+                    end
+                end
+            end
+        end)
+    end
+    
+    local rotationLoop = RunService.RenderStepped:Connect(function()
+        if antiStunEnabled then
+            fixRotation()
+        end
+    end)
+    table.insert(antiStunConnections, rotationLoop)
+end
+
+local function disableAntiStun()
+    antiStunEnabled = false
+    for _, conn in pairs(antiStunConnections) do
+        pcall(function() conn:Disconnect() end)
+    end
+    antiStunConnections = {}
+    if antiStunThread then
+        antiStunThread = nil
     end
 end
 
@@ -443,7 +580,7 @@ makeButton("Clear All ESP", scroll, Color3.fromRGB(80,50,50)).MouseButton1Click:
 	espLineEnabled = false
 end)
 
--- ==================== ANTI DAMAGE BUTTON (DRIP STYLE) ==================
+-- ==================== ANTI DAMAGE BUTTON ====================
 local antiDamageBtn = makeButton("Anti Damage: OFF", scroll)
 antiDamageBtn.MouseButton1Click:Connect(function()
 	antiDamageEnabled = not antiDamageEnabled
@@ -456,6 +593,22 @@ antiDamageBtn.MouseButton1Click:Connect(function()
 		disableAntiDamage()
 		antiDamageBtn.Text = "Anti Damage: OFF"
 		antiDamageBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
+	end
+end)
+
+-- ==================== ANTI STUN BUTTON (UPGRADE) ====================
+local antiStunBtn = makeButton("Anti Stun: OFF", scroll)
+antiStunBtn.MouseButton1Click:Connect(function()
+	antiStunEnabled = not antiStunEnabled
+	
+	if antiStunEnabled then
+		setupAntiStun()
+		antiStunBtn.Text = "Anti Stun: ON"
+		antiStunBtn.BackgroundColor3 = Color3.fromRGB(0,100,0)
+	else
+		disableAntiStun()
+		antiStunBtn.Text = "Anti Stun: OFF"
+		antiStunBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
 	end
 end)
 
@@ -572,20 +725,6 @@ makeButton("SmartHitbox", scroll).MouseButton1Click:Connect(function()
 	end
 end)
 
-makeButton("AntiStun", scroll).MouseButton1Click:Connect(function()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if not hum then return end
-	local conn
-	conn = hum.StateChanged:Connect(function(_, new)
-		if new == Enum.HumanoidStateType.PlatformStanding or new == Enum.HumanoidStateType.Physics then
-			hum.Sit = false
-			hum.PlatformStand = false
-			hum:ChangeState(Enum.HumanoidStateType.Running)
-		end
-	end)
-	delay(5,function() if conn and conn.Connected then conn:Disconnect() end end)
-end)
-
 makeButton("NoShadow", scroll).MouseButton1Click:Connect(function()
 	for _,v in ipairs(Lighting:GetDescendants()) do
 		if v:IsA("ShadowMapLight") or v:IsA("SpotLight") or v:IsA("PointLight") or v:IsA("DirectionalLight") then
@@ -696,7 +835,7 @@ minimizeBtn.MouseButton1Click:Connect(function()
 		scroll.Visible=false
 		title.Text="VD PZ"
 	else
-		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,190,0,440)}):Play()
+		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,190,0,460)}):Play()
 		scroll.Visible=true
 		title.Text="VD Putzzdev"
 	end
@@ -711,6 +850,7 @@ player.CharacterRemoving:Connect(function()
 	smartProxies={}
 	if noclipConn then noclipConn:Disconnect() noclipConn = nil end
 	disableAntiDamage()
+	disableAntiStun()
 	espLineEnabled = false
 	for _, line in pairs(espLines) do
 		pcall(function() line:Remove() end)
@@ -718,4 +858,4 @@ player.CharacterRemoving:Connect(function()
 	espLines = {}
 end)
 
-print("VD Putzzdev V2")
+print("VD Putzzdev Ve")
