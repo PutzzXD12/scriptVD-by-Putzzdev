@@ -1,128 +1,128 @@
+-- ============================================
+-- VD PUTZZDEV | RAYFIELD EDITION
+-- Fitur lengkap + Auto Repair Generator
+-- ============================================
+
 local Players = game:GetService("Players")
 local RunService = game:GetService("RunService")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local Lighting = game:GetService("Lighting")
 local Workspace = game:GetService("Workspace")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local player = Players.LocalPlayer
 local camera = Workspace.CurrentCamera
 
-local guiName = "GuiViolenceDistrict"
+-- ==================== LOAD RAYFIELD ====================
+local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
+
+-- ==================== VARIABEL GLOBAL ====================
 local killerNames = {["abysswalker"]=true,["hidden"]=true,["jason"]=true,["jeff"]=true,["masked"]=true,["myers"]=true}
 local ANTI_DAMAGE_DISTANCE = 40
 local DEV_ONLY = (RunService:IsStudio() or (game.CreatorType == Enum.CreatorType.User and game.CreatorId == player.UserId))
 
-local pg = player:WaitForChild("PlayerGui")
-if pg:FindFirstChild(guiName) then pg[guiName]:Destroy() end
+local highlights = {}
+local smartProxies = {}
+local noclipConn = nil
+local antiDamageEnabled = false
+local lastHealth = nil
+local antiConn = nil
 
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = guiName
-screenGui.ResetOnSpawn = false
-screenGui.Parent = pg
-screenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+-- ESP Line (Drip)
+local espLineEnabled = false
+local espLines = {}
+local espLineColor = Color3.fromRGB(255,255,255)
 
-local main = Instance.new("Frame")
-main.Name = "Main"
-main.Size = UDim2.new(0, 190, 0, 460)
-main.Position = UDim2.new(0.5, -95, 0.5, -230)
-main.AnchorPoint = Vector2.new(0.5, 0.5)
-main.BackgroundColor3 = Color3.fromRGB(18,18,18)
-main.BorderSizePixel = 0
-main.Parent = screenGui
-main.Active = true
-main.Draggable = true
-Instance.new("UICorner", main).CornerRadius = UDim.new(0, 10)
+-- Auto Repair
+local autoRepairEnabled = false
+local autoRepairThread = nil
 
-main.BackgroundTransparency = 1
-main.Position = UDim2.new(0.5, -95, 0.5, -250)
-TweenService:Create(main, TweenInfo.new(0.45, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
-	BackgroundTransparency = 0,
-	Position = UDim2.new(0.5, -95, 0.5, -230)
-}):Play()
-
-local title = Instance.new("TextLabel", main)
-title.Size = UDim2.new(1, 0, 0, 36)
-title.Position = UDim2.new(0, 0, 0, 0)
-title.BackgroundColor3 = Color3.fromRGB(28,28,28)
-title.Text = "VD Putzzdev"
-title.Font = Enum.Font.GothamBold
-title.TextSize = 13
-title.TextColor3 = Color3.fromRGB(255,255,255)
-title.BorderSizePixel = 0
-Instance.new("UICorner", title).CornerRadius = UDim.new(0, 8)
-
-local scroll = Instance.new("ScrollingFrame", main)
-scroll.Name = "Scroll"
-scroll.Size = UDim2.new(1, -12, 1, -58)
-scroll.Position = UDim2.new(0, 6, 0, 42)
-scroll.BackgroundTransparency = 1
-scroll.ScrollBarThickness = 6
-scroll.CanvasSize = UDim2.new(0,0,0,0)
-local layout = Instance.new("UIListLayout", scroll)
-layout.Padding = UDim.new(0, 6)
-layout.HorizontalAlignment = Enum.HorizontalAlignment.Center
-layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-	scroll.CanvasSize = UDim2.new(0,0,0, layout.AbsoluteContentSize.Y + 12)
-end)
-
-local function makeButton(text, parent)
-	local b = Instance.new("TextButton")
-	b.Size = UDim2.new(1, -12, 0, 32)
-	b.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	b.Font = Enum.Font.GothamBold
-	b.TextSize = 13
-	b.TextColor3 = Color3.fromRGB(240,240,240)
-	b.AutoButtonColor = false
-	b.Text = text
-	Instance.new("UICorner", b).CornerRadius = UDim.new(0,6)
-	b.Parent = parent
-	b.MouseEnter:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(66,66,66)}):Play()
-	end)
-	b.MouseLeave:Connect(function()
-		TweenService:Create(b, TweenInfo.new(0.12), {BackgroundColor3 = Color3.fromRGB(44,44,44)}):Play()
-	end)
-	return b
-end
-
+-- ==================== FUNGSI UTILITY ====================
 local function findRootForDesc(desc)
-	if not desc then return nil end
-	if desc:IsA("BasePart") then return desc end
-	if desc:IsA("Model") then
-		return desc.PrimaryPart or desc:FindFirstChildWhichIsA("BasePart")
-	end
-	return nil
+    if not desc then return nil end
+    if desc:IsA("BasePart") then return desc end
+    if desc:IsA("Model") then
+        return desc.PrimaryPart or desc:FindFirstChildWhichIsA("BasePart")
+    end
+    return nil
 end
 
 local function createHighlight(target, color)
-	if not target or not target.Parent then return nil end
-	local h = target:FindFirstChildOfClass("Highlight")
-	if h then
-		h.FillColor = color
-		h.OutlineColor = Color3.fromRGB(255,255,255)
-		return h
-	end
-	h = Instance.new("Highlight")
-	h.FillColor = color
-	h.OutlineColor = Color3.fromRGB(255,255,255)
-	h.Parent = target
-	return h
+    if not target or not target.Parent then return nil end
+    local h = target:FindFirstChildOfClass("Highlight")
+    if h then
+        h.FillColor = color
+        h.OutlineColor = Color3.fromRGB(255,255,255)
+        return h
+    end
+    h = Instance.new("Highlight")
+    h.FillColor = color
+    h.OutlineColor = Color3.fromRGB(255,255,255)
+    h.Parent = target
+    return h
 end
 
--- ================== ESP LINE (DRIP STYLE) ==================
-local espLineEnabled = false
-local espLines = {}
-local espLineColor = Color3.fromRGB(255, 255, 255)
+local function clearHighlights()
+    for _, v in pairs(highlights) do
+        if v and v.Parent then v:Destroy() end
+    end
+    highlights = {}
+end
 
+-- Generator & Hook collection (sama seperti asli)
+local generatorNames = {["generator"]=true,["generator_old"]=true,["gene"]=true}
+local hookNames = {["hookpoint"]=true,["hook"]=true,["hookmeat"]=true}
+local generatorPrefix = "ge"
+local hookPrefix = "ho"
+
+local function collectGenerators()
+    local matches = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("Model") then
+            local nameLower = string.lower(obj.Name)
+            if generatorNames[nameLower] or string.sub(nameLower, 1, #generatorPrefix) == generatorPrefix then
+                local root = findRootForDesc(obj) or obj
+                if root and root.Parent then
+                    table.insert(matches, root)
+                end
+            end
+        end
+    end
+    return matches
+end
+
+local function collectHooks()
+    local matches = {}
+    for _, obj in ipairs(Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("Model") then
+            local nameLower = string.lower(obj.Name)
+            if hookNames[nameLower] or string.sub(nameLower, 1, #hookPrefix) == hookPrefix then
+                local root = findRootForDesc(obj) or obj
+                if root and root.Parent then
+                    table.insert(matches, root)
+                end
+            end
+        end
+    end
+    return matches
+end
+
+local function safeTeleportTo(part)
+    local char = player.Character
+    if not char or not part then return end
+    local hrp = char:FindFirstChild("HumanoidRootPart")
+    if not hrp then return end
+    hrp.CFrame = part.CFrame + Vector3.new(0,3,0)
+end
+
+-- ==================== ESP LINE (DRIP) ====================
 local function createESPLine(plr)
     if plr == player then return end
-    
     local line = Drawing.new("Line")
     line.Thickness = 2
     line.Color = espLineColor
     line.Visible = false
-    
     espLines[plr] = line
 end
 
@@ -133,13 +133,11 @@ local function updateESPLine()
         end
         return
     end
-    
     for pl, line in pairs(espLines) do
         local char = pl.Character
         if char and char:FindFirstChild("HumanoidRootPart") then
             local hrp = char.HumanoidRootPart
             local pos, visible = camera:WorldToViewportPoint(hrp.Position)
-            
             if visible then
                 line.From = Vector2.new(camera.ViewportSize.X / 2, camera.ViewportSize.Y)
                 line.To = Vector2.new(pos.X, pos.Y)
@@ -153,709 +151,479 @@ local function updateESPLine()
     end
 end
 
-for _, p in pairs(Players:GetPlayers()) do
-    createESPLine(p)
-end
-
-Players.PlayerAdded:Connect(function(p)
-    createESPLine(p)
-end)
-
+-- Inisialisasi ESP Line
+for _, p in pairs(Players:GetPlayers()) do createESPLine(p) end
+Players.PlayerAdded:Connect(createESPLine)
 Players.PlayerRemoving:Connect(function(p)
     if espLines[p] then
         pcall(function() espLines[p]:Remove() end)
         espLines[p] = nil
     end
 end)
-
 RunService.RenderStepped:Connect(updateESPLine)
 
--- ================== ANTI DAMAGE (DRIP STYLE) ==================
-local antiDamageEnabled = false
-local antiDamageHeartbeat = nil
-local antiDamageThread = nil
-
+-- ==================== ANTI DAMAGE (DRIP) ==================
 local function setupAntiDamage()
-    if antiDamageHeartbeat then
-        antiDamageHeartbeat:Disconnect()
-        antiDamageHeartbeat = nil
-    end
-    if antiDamageThread then
-        antiDamageThread = nil
-    end
-    
-    antiDamageHeartbeat = RunService.Heartbeat:Connect(function()
+    if antiConn then antiConn:Disconnect() end
+    antiConn = RunService.Heartbeat:Connect(function()
         if antiDamageEnabled and player.Character then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                if humanoid.Health < humanoid.MaxHealth then
-                    humanoid.Health = humanoid.MaxHealth
-                end
-                if humanoid.Health <= 0 then
-                    humanoid.Health = humanoid.MaxHealth
-                end
+            local hum = player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then
+                if hum.Health < hum.MaxHealth then hum.Health = hum.MaxHealth end
+                if hum.Health <= 0 then hum.Health = hum.MaxHealth end
             end
-        end
-    end)
-    
-    antiDamageThread = task.spawn(function()
-        while antiDamageEnabled do
-            task.wait(0.001)
-            pcall(function()
-                if player.Character then
-                    local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-                    if humanoid and humanoid.Health < humanoid.MaxHealth then
-                        humanoid.Health = humanoid.MaxHealth
-                    end
-                end
-            end)
-        end
-    end)
-    
-    local function onHealthChanged()
-        if antiDamageEnabled and player.Character then
-            local humanoid = player.Character:FindFirstChildOfClass("Humanoid")
-            if humanoid then
-                humanoid.HealthChanged:Connect(function(newHealth)
-                    if antiDamageEnabled and newHealth < humanoid.MaxHealth then
-                        humanoid.Health = humanoid.MaxHealth
-                    end
-                end)
-            end
-        end
-    end
-    
-    if player.Character then
-        onHealthChanged()
-    end
-    
-    player.CharacterAdded:Connect(function(char)
-        task.wait(0.5)
-        if antiDamageEnabled then
-            onHealthChanged()
         end
     end)
 end
 
 local function disableAntiDamage()
-    if antiDamageHeartbeat then
-        antiDamageHeartbeat:Disconnect()
-        antiDamageHeartbeat = nil
+    if antiConn then antiConn:Disconnect() antiConn = nil end
+end
+
+-- ==================== AUTO REPAIR GENERATOR ==================
+local function repairGenerator(genPart)
+    -- Coba berbagai metode interaksi
+    local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or
+                   ReplicatedStorage:FindFirstChild("Interact") or
+                   ReplicatedStorage:FindFirstChild("Repair")
+    if remote then
+        pcall(function() remote:FireServer("Interact", genPart) end)
+        pcall(function() remote:FireServer(genPart) end)
     end
-    if antiDamageThread then
-        antiDamageThread = nil
+    local prompt = genPart:FindFirstChildWhichIsA("ProximityPrompt")
+    if not prompt and genPart.Parent then prompt = genPart.Parent:FindFirstChildWhichIsA("ProximityPrompt") end
+    if prompt then pcall(function() prompt:InputHoldBegin() end) end
+    local click = genPart:FindFirstChildWhichIsA("ClickDetector")
+    if click then pcall(function() click:Click() end) end
+end
+
+local function autoRepairLoop()
+    while autoRepairEnabled do
+        local generators = collectGenerators()
+        if #generators == 0 then
+            task.wait(1)
+            -- Mungkin semua generator sudah selesai? Kita tetap lanjut cek
+        else
+            for _, gen in ipairs(generators) do
+                if not autoRepairEnabled then break end
+                safeTeleportTo(gen)
+                task.wait(0.3)
+                repairGenerator(gen)
+                task.wait(1) -- waktu repair
+            end
+        end
+        task.wait(0.5)
     end
 end
 
--- ================== ANTI STUN (TOTAL PROTECTION) ==================
-local antiStunEnabled = false
-local antiStunConnections = {}
-local antiStunThread = nil
+-- ==================== GUI RAYFIELD ==================
+local Window = Rayfield:CreateWindow({
+    Name = "VD Putzzdev",
+    Icon = 0,
+    LoadingTitle = "Violence District",
+    LoadingSubtitle = "Rayfield Edition",
+    Theme = "Dark",
+    ToggleUIKeybind = "K",
+})
 
-local function setupAntiStun()
-    -- Matikan semua koneksi lama
-    for _, conn in pairs(antiStunConnections) do
-        pcall(function() conn:Disconnect() end)
-    end
-    antiStunConnections = {}
-    if antiStunThread then
-        antiStunThread = nil
-    end
-    
-    -- Metode 1: StateChanged (cegah PlatformStanding dan Physics)
-    local function onStateChanged(_, newState)
-        if not antiStunEnabled then return end
-        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-        if hum then
-            if newState == Enum.HumanoidStateType.PlatformStanding or 
-               newState == Enum.HumanoidStateType.Physics or
-               newState == Enum.HumanoidStateType.Stunned or
-               newState == Enum.HumanoidStateType.GettingUp or
-               newState == Enum.HumanoidStateType.FallingDown then
-                -- Paksa ke Running
-                hum:ChangeState(Enum.HumanoidStateType.Running)
-                hum.Sit = false
-                hum.PlatformStand = false
+-- Tab: ESP
+local ESPTab = Window:CreateTab("ESP", nil)
+
+ESPTab:CreateSection("Highlight ESP")
+
+local espGen = false
+ESPTab:CreateToggle({
+    Name = "ESP Generator",
+    CurrentValue = false,
+    Callback = function(v)
+        espGen = v
+        if v then
+            for _,root in ipairs(collectGenerators()) do
+                highlights[root] = createHighlight(root, Color3.fromRGB(255,200,0))
+            end
+        else
+            for k,v in pairs(highlights) do
+                if v and v.Parent and (k:IsA("BasePart") or k:IsA("Model")) and (k.Name:lower():find("generator") or k.Name:lower():find("gen")) then
+                    v:Destroy()
+                    highlights[k]=nil
+                end
             end
         end
     end
-    
-    -- Metode 2: Loop cepat cek dan reset setiap 0.01 detik
-    antiStunThread = task.spawn(function()
-        while antiStunEnabled do
-            task.wait(0.01)
-            pcall(function()
+})
+
+local espPlayers = false
+ESPTab:CreateToggle({
+    Name = "ESP Players",
+    CurrentValue = false,
+    Callback = function(v)
+        espPlayers = v
+        if v then
+            for _,pl in ipairs(Players:GetPlayers()) do
+                if pl ~= player and pl.Character then
+                    highlights[pl] = createHighlight(pl.Character, Color3.fromRGB(0,150,255))
+                end
+            end
+        else
+            for k,v in pairs(highlights) do
+                if v and v.Parent and k:IsA("Player") then v:Destroy() highlights[k]=nil end
+            end
+        end
+    end
+})
+
+local espKiller = false
+ESPTab:CreateToggle({
+    Name = "ESP Killer",
+    CurrentValue = false,
+    Callback = function(v)
+        espKiller = v
+        if v then
+            for _,pl in ipairs(Players:GetPlayers()) do
+                local nm = string.lower(pl.Name or "")
+                if pl.Character and (killerNames[nm] or string.find(nm, "killer")) then
+                    highlights[pl] = createHighlight(pl.Character, Color3.fromRGB(255,0,0))
+                end
+            end
+        else
+            for k,v in pairs(highlights) do
+                if v and v.Parent and k:IsA("Player") and (killerNames[string.lower(k.Name)] or string.find(k.Name:lower(),"killer")) then
+                    v:Destroy() highlights[k]=nil
+                end
+            end
+        end
+    end
+})
+
+local espHook = false
+ESPTab:CreateToggle({
+    Name = "ESP Hook",
+    CurrentValue = false,
+    Callback = function(v)
+        espHook = v
+        if v then
+            for _,hook in ipairs(collectHooks()) do
+                highlights[hook] = createHighlight(hook, Color3.fromRGB(255,255,0))
+            end
+        else
+            for k,v in pairs(highlights) do
+                if v and v.Parent and k:IsA("BasePart") and (k.Name:lower():find("hook") or k.Name:lower():find("hookpoint")) then
+                    v:Destroy() highlights[k]=nil
+                end
+            end
+        end
+    end
+})
+
+ESPTab:CreateToggle({
+    Name = "ESP Lane (Line Drip)",
+    CurrentValue = false,
+    Callback = function(v)
+        espLineEnabled = v
+    end
+})
+
+ESPTab:CreateButton({
+    Name = "Clear All ESP",
+    Callback = function()
+        clearHighlights()
+        espGen = false; espPlayers = false; espKiller = false; espHook = false
+        espLineEnabled = false
+        -- Reset toggle visual di Rayfield? Tidak ada API, biarkan user matikan manual
+        Rayfield:Notify({Title = "ESP", Content = "All ESP cleared", Duration = 2})
+    end
+})
+
+-- Tab: Teleport
+local TeleTab = Window:CreateTab("Teleport", nil)
+TeleTab:CreateButton({
+    Name = "To Generator (Random)",
+    Callback = function()
+        local gens = collectGenerators()
+        if #gens > 0 then safeTeleportTo(gens[math.random(1,#gens)]) end
+    end
+})
+TeleTab:CreateButton({
+    Name = "To Hook (Random)",
+    Callback = function()
+        local hooks = collectHooks()
+        if #hooks > 0 then safeTeleportTo(hooks[math.random(1,#hooks)]) end
+    end
+})
+TeleTab:CreateButton({
+    Name = "To Player (Random)",
+    Callback = function()
+        local pool = {}
+        for _,pl in ipairs(Players:GetPlayers()) do
+            if pl ~= player and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
+                table.insert(pool, pl)
+            end
+        end
+        if #pool > 0 then
+            local target = pool[math.random(1,#pool)]
+            local hrp = target.Character:FindFirstChild("HumanoidRootPart")
+            if hrp then safeTeleportTo(hrp) end
+        end
+    end
+})
+
+-- Tab: Auto
+local AutoTab = Window:CreateTab("Auto", nil)
+AutoTab:CreateToggle({
+    Name = "Auto Repair Generator (Sampai Selesai)",
+    CurrentValue = false,
+    Callback = function(v)
+        autoRepairEnabled = v
+        if v then
+            if autoRepairThread then task.cancel(autoRepairThread) end
+            autoRepairThread = task.spawn(autoRepairLoop)
+        else
+            if autoRepairThread then task.cancel(autoRepairThread) end
+            autoRepairThread = nil
+        end
+    end
+})
+
+-- Tab: Combat
+local CombatTab = Window:CreateTab("Combat", nil)
+CombatTab:CreateButton({
+    Name = "Heal",
+    Callback = function()
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.Health = hum.MaxHealth end
+    end
+})
+CombatTab:CreateButton({
+    Name = "Speed50",
+    Callback = function()
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum then hum.WalkSpeed = 50 end
+    end
+})
+CombatTab:CreateButton({
+    Name = "Animx2",
+    Callback = function()
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if hum and hum:FindFirstChild("Animator") then
+            for _,t in ipairs(hum.Animator:GetPlayingAnimationTracks()) do
+                t:AdjustSpeed(2)
+            end
+        end
+    end
+})
+CombatTab:CreateButton({
+    Name = "ShiftLock (8s)",
+    Callback = function()
+        UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
+        UserInputService.MouseIconEnabled = false
+        local conn = RunService.RenderStepped:Connect(function()
+            local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
+            if hrp and camera then
+                local look = Vector3.new(camera.CFrame.LookVector.X,0,camera.CFrame.LookVector.Z)
+                if look.Magnitude>0.001 then hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + look) end
+            end
+        end)
+        task.delay(8, function()
+            if conn and conn.Connected then conn:Disconnect() end
+            UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+            UserInputService.MouseIconEnabled = true
+        end)
+    end
+})
+CombatTab:CreateToggle({
+    Name = "Noclip",
+    CurrentValue = false,
+    Callback = function(v)
+        if v then
+            if noclipConn then return end
+            noclipConn = RunService.Stepped:Connect(function()
                 if player.Character then
-                    local hum = player.Character:FindFirstChildOfClass("Humanoid")
-                    if hum then
-                        -- Cek state aneh
-                        local state = hum:GetState()
-                        if state == Enum.HumanoidStateType.PlatformStanding or
-                           state == Enum.HumanoidStateType.Physics or
-                           state == Enum.HumanoidStateType.Stunned or
-                           state == Enum.HumanoidStateType.GettingUp or
-                           state == Enum.HumanoidStateType.FallingDown then
-                            hum:ChangeState(Enum.HumanoidStateType.Running)
-                            hum.Sit = false
-                            hum.PlatformStand = false
-                        end
-                        
-                        -- Cegah agar tidak bisa di-grab/sling
-                        hum.Sit = false
-                        hum.PlatformStand = false
-                        
-                        -- Hapus constraints yang dipasang killer (sling, grab)
-                        for _, joint in ipairs(player.Character:GetDescendants()) do
-                            if joint:IsA("HingeConstraint") or 
-                               joint:IsA("RodConstraint") or 
-                               joint:IsA("RopeConstraint") or
-                               joint:IsA("WeldConstraint") then
-                                if not joint:IsDescendantOf(player.Character) then
-                                    joint:Destroy()
-                                end
-                            end
-                        end
+                    for _,p in ipairs(player.Character:GetDescendants()) do
+                        if p:IsA("BasePart") then p.CanCollide = false end
                     end
                 end
             end)
+        else
+            if noclipConn then noclipConn:Disconnect() noclipConn = nil end
         end
-    end)
-    
-    -- Metode 3: StateChanged event (responsif)
-    local stateConn = nil
-    local function setupStateChanged()
-        if player.Character then
-            local hum = player.Character:FindFirstChildOfClass("Humanoid")
-            if hum then
-                if stateConn then stateConn:Disconnect() end
-                stateConn = hum.StateChanged:Connect(onStateChanged)
-                table.insert(antiStunConnections, stateConn)
+    end
+})
+CombatTab:CreateButton({
+    Name = "NoHitbox",
+    Callback = function()
+        local c = player.Character
+        if not c then return end
+        for _,p in ipairs(c:GetDescendants()) do
+            if p:IsA("BasePart") then p.CanTouch = false end
+        end
+    end
+})
+CombatTab:CreateButton({
+    Name = "SmartHitbox",
+    Callback = function()
+        for _,pl in ipairs(Players:GetPlayers()) do
+            local nm = string.lower(pl.Name or "")
+            if pl ~= player and pl.Character and (killerNames[nm] or string.find(nm,"killer")) then
+                local hrp = pl.Character:FindFirstChild("HumanoidRootPart")
+                if hrp and not smartProxies[pl] then
+                    local proxy = Instance.new("Part")
+                    proxy.Name = "SmartHitboxProxy"
+                    proxy.Size = Vector3.new(3,3,3)
+                    proxy.Transparency = 1
+                    proxy.CanCollide = false
+                    proxy.Anchored = false
+                    proxy.Massless = true
+                    proxy.CFrame = hrp.CFrame
+                    proxy.Parent = Workspace
+                    local weld = Instance.new("WeldConstraint")
+                    weld.Part0 = proxy
+                    weld.Part1 = hrp
+                    weld.Parent = proxy
+                    smartProxies[pl] = proxy
+                end
             end
         end
     end
-    
-    setupStateChanged()
-    player.CharacterAdded:Connect(function()
-        task.wait(0.1)
-        setupStateChanged()
-    end)
-    
-    -- Metode 4: Hapus semua efek stun (partikel, efek visual)
-    local function removeStunEffects()
-        if not antiStunEnabled then return end
-        pcall(function()
-            if player.Character then
-                for _, v in ipairs(player.Character:GetDescendants()) do
-                    if v.Name:lower():find("stun") or 
-                       v.Name:lower():find("hit") or
-                       v.Name:lower():find("effect") or
-                       v:IsA("ParticleEmitter") or
-                       v:IsA("Attachment") then
-                        v:Destroy()
+})
+CombatTab:CreateButton({
+    Name = "AntiStun (5s)",
+    Callback = function()
+        local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+        if not hum then return end
+        local conn
+        conn = hum.StateChanged:Connect(function(_, new)
+            if new == Enum.HumanoidStateType.PlatformStanding or new == Enum.HumanoidStateType.Physics then
+                hum.Sit = false
+                hum.PlatformStand = false
+                hum:ChangeState(Enum.HumanoidStateType.Running)
+            end
+        end)
+        task.delay(5, function() if conn and conn.Connected then conn:Disconnect() end end)
+    end
+})
+CombatTab:CreateToggle({
+    Name = "Anti Damage",
+    CurrentValue = false,
+    Callback = function(v)
+        antiDamageEnabled = v
+        if v then setupAntiDamage() else disableAntiDamage() end
+    end
+})
+
+-- Tab: Visual
+local VisualTab = Window:CreateTab("Visual", nil)
+VisualTab:CreateButton({
+    Name = "NoShadow",
+    Callback = function()
+        for _,v in ipairs(Lighting:GetDescendants()) do
+            if v:IsA("ShadowMapLight") or v:IsA("SpotLight") or v:IsA("PointLight") or v:IsA("DirectionalLight") then
+                v.Shadows=false
+            end
+        end
+        Lighting.GlobalShadows=false
+    end
+})
+VisualTab:CreateButton({
+    Name = "Morning",
+    Callback = function() Lighting.ClockTime=7 end
+})
+VisualTab:CreateButton({
+    Name = "Afternoon",
+    Callback = function() Lighting.ClockTime=17 end
+})
+VisualTab:CreateButton({
+    Name = "Spawn Jump Button",
+    Callback = function()
+        local pg = player:WaitForChild("PlayerGui")
+        if pg:FindFirstChild("JumpButton") then return end
+        local jb = Instance.new("TextButton")
+        jb.Name="JumpButton"
+        jb.Size=UDim2.new(0,80,0,44)
+        jb.Position=UDim2.new(1,-98,1,-68)
+        jb.AnchorPoint=Vector2.new(1,1)
+        jb.BackgroundColor3=Color3.fromRGB(48,48,48)
+        jb.Font=Enum.Font.GothamBold
+        jb.Text="Jump"
+        jb.TextColor3=Color3.fromRGB(240,240,240)
+        jb.Parent = pg
+        Instance.new("UICorner", jb).CornerRadius=UDim.new(0,8)
+        jb.MouseButton1Click:Connect(function()
+            local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Jump=true end
+        end)
+    end
+})
+VisualTab:CreateToggle({
+    Name = "Invisible Map",
+    CurrentValue = false,
+    Callback = function(v)
+        for _,obj in ipairs(Workspace:GetDescendants()) do
+            if obj:IsA("BasePart") and not obj:IsDescendantOf(player.Character) then
+                obj.LocalTransparencyModifier = v and 1 or 0
+            end
+        end
+    end
+})
+VisualTab:CreateToggle({
+    Name = "No Fog",
+    CurrentValue = false,
+    Callback = function(v)
+        if v then
+            Lighting.FogStart = 0
+            Lighting.FogEnd = 100000
+        else
+            Lighting.FogStart = 0
+            Lighting.FogEnd = 1000
+        end
+    end
+})
+
+-- Tab: Utility
+local UtilTab = Window:CreateTab("Utility", nil)
+UtilTab:CreateButton({
+    Name = "Fast Cooldown",
+    Callback = function()
+        for _, plr in ipairs(Players:GetPlayers()) do
+            if plr.Character then
+                local cds = plr.Character:FindFirstChild("Cooldowns")
+                if cds then
+                    for _,v in ipairs(cds:GetChildren()) do
+                        if v:IsA("NumberValue") then v.Value = 0 end
                     end
                 end
             end
-        end)
-    end
-    
-    local effectLoop = RunService.Heartbeat:Connect(function()
-        if antiStunEnabled then
-            removeStunEffects()
         end
-    end)
-    table.insert(antiStunConnections, effectLoop)
-    
-    -- Metode 5: Cegah rotasi abnormal (ragdoll prevention)
-    local function fixRotation()
-        if not antiStunEnabled then return end
-        pcall(function()
-            if player.Character then
-                local hrp = player.Character:FindFirstChild("HumanoidRootPart")
-                if hrp then
-                    local rot = hrp.Orientation
-                    if math.abs(rot.X) > 45 or math.abs(rot.Z) > 45 then
-                        hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + Vector3.new(0, 1, 0))
-                    end
-                end
+    end
+})
+UtilTab:CreateButton({
+    Name = "Get Off Sling",
+    Callback = function()
+        local char = player.Character
+        if not char then return end
+        for _,joint in ipairs(char:GetDescendants()) do
+            if joint:IsA("HingeConstraint") or joint:IsA("RodConstraint") then
+                joint.Enabled = false
             end
-        end)
-    end
-    
-    local rotationLoop = RunService.RenderStepped:Connect(function()
-        if antiStunEnabled then
-            fixRotation()
         end
-    end)
-    table.insert(antiStunConnections, rotationLoop)
-end
-
-local function disableAntiStun()
-    antiStunEnabled = false
-    for _, conn in pairs(antiStunConnections) do
-        pcall(function() conn:Disconnect() end)
+        local seat = char:FindFirstChildWhichIsA("VehicleSeat", true)
+        if seat then
+            local hum = char:FindFirstChildOfClass("Humanoid")
+            if hum then hum.Sit = false end
+        end
     end
-    antiStunConnections = {}
-    if antiStunThread then
-        antiStunThread = nil
+})
+UtilTab:CreateButton({
+    Name = "Rejoin Game",
+    Callback = function()
+        game:GetService("TeleportService"):Teleport(game.PlaceId)
     end
-end
+})
 
--- ==================== VARIABEL ESP TOGGLE ====================
-local highlights = {}
-local espStates = {
-	generator = false,
-	players = false,
-	killer = false,
-	hook = false,
-	lane = false,
-}
+-- Notifikasi siap
+Rayfield:Notify({
+    Title = "VD Putzzdev",
+    Content = "Rayfield Edition loaded. Press K to toggle GUI",
+    Duration = 5
+})
 
-local function clearHighlights()
-	for k,v in pairs(highlights) do 
-		if v and v.Parent then v:Destroy() end 
-	end
-	highlights = {}
-end
-
-local function refreshESP()
-	clearHighlights()
-	
-	if espStates.generator then
-		for _,root in ipairs(collectGenerators()) do
-			highlights[root] = createHighlight(root, Color3.fromRGB(255,200,0))
-		end
-	end
-	
-	if espStates.players then
-		for _,pl in ipairs(Players:GetPlayers()) do
-			if pl ~= player and pl.Character then
-				highlights[pl] = createHighlight(pl.Character, Color3.fromRGB(0,150,255))
-			end
-		end
-	end
-	
-	if espStates.killer then
-		for _,pl in ipairs(Players:GetPlayers()) do
-			local nm = string.lower(pl.Name or "")
-			if pl.Character and (killerNames[nm] or string.find(nm, "killer")) then
-				highlights[pl] = createHighlight(pl.Character, Color3.fromRGB(255,0,0))
-			end
-		end
-	end
-	
-	if espStates.hook then
-		for _,hook in ipairs(collectHooks()) do
-			highlights[hook] = createHighlight(hook, Color3.fromRGB(255,255,0))
-		end
-	end
-end
-
--- ==================== GENERATOR & HOOK COLLECTION ====================
-local generatorNames = {
-	["generator"] = true,
-	["generator_old"] = true,
-	["gene"] = true
-}
-local hookNames = {
-	["hookpoint"] = true,
-	["hook"] = true,
-	["hookmeat"] = true
-}
-
-local generatorPrefix = "ge"
-local hookPrefix = "ho"
-
-local function collectGenerators()
-	local matches = {}
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("Model") then
-			local nameLower = string.lower(obj.Name)
-			if generatorNames[nameLower] or string.sub(nameLower, 1, #generatorPrefix) == generatorPrefix then
-				local root = findRootForDesc(obj) or obj
-				if root and root.Parent then
-					table.insert(matches, root)
-				end
-			end
-		end
-	end
-	return matches
-end
-
-local function collectHooks()
-	local matches = {}
-	for _, obj in ipairs(Workspace:GetDescendants()) do
-		if obj:IsA("BasePart") or obj:IsA("MeshPart") or obj:IsA("Model") then
-			local nameLower = string.lower(obj.Name)
-			if hookNames[nameLower] or string.sub(nameLower, 1, #hookPrefix) == hookPrefix then
-				local root = findRootForDesc(obj) or obj
-				if root and root.Parent then
-					table.insert(matches, root)
-				end
-			end
-		end
-	end
-	return matches
-end
-
-local gens = collectGenerators()
-print("Generators found:", #gens)
-
-local hooks = collectHooks()
-print("Hooks found:", #hooks)
-
-local function safeTeleportTo(part)
-	local char = player.Character
-	if not char or not part then return end
-	local hrp = char:FindFirstChild("HumanoidRootPart")
-	if not hrp then return end
-	hrp.CFrame = part.CFrame + Vector3.new(0,3,0)
-end
-
--- ==================== BUTTON FITUR ====================
--- ESP Generator (Toggle)
-local espGenBtn = makeButton("ESP Generator: OFF", scroll)
-espGenBtn.MouseButton1Click:Connect(function()
-	espStates.generator = not espStates.generator
-	espGenBtn.Text = espStates.generator and "ESP Generator: ON" or "ESP Generator: OFF"
-	espGenBtn.BackgroundColor3 = espStates.generator and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
-	refreshESP()
-end)
-
--- ESP Players (Toggle)
-local espPlayerBtn = makeButton("ESP Players: OFF", scroll)
-espPlayerBtn.MouseButton1Click:Connect(function()
-	espStates.players = not espStates.players
-	espPlayerBtn.Text = espStates.players and "ESP Players: ON" or "ESP Players: OFF"
-	espPlayerBtn.BackgroundColor3 = espStates.players and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
-	refreshESP()
-end)
-
--- ESP Lane (Drip Style) - Toggle
-local espLaneBtn = makeButton("ESP Lane: OFF", scroll)
-espLaneBtn.MouseButton1Click:Connect(function()
-	espStates.lane = not espStates.lane
-	espLaneBtn.Text = espStates.lane and "ESP Lane: ON" or "ESP Lane: OFF"
-	espLaneBtn.BackgroundColor3 = espStates.lane and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
-	espLineEnabled = espStates.lane
-end)
-
--- ESP Killer (Toggle)
-local espKillerBtn = makeButton("ESP Killer: OFF", scroll)
-espKillerBtn.MouseButton1Click:Connect(function()
-	espStates.killer = not espStates.killer
-	espKillerBtn.Text = espStates.killer and "ESP Killer: ON" or "ESP Killer: OFF"
-	espKillerBtn.BackgroundColor3 = espStates.killer and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
-	refreshESP()
-end)
-
--- ESP Hook (Toggle)
-local espHookBtn = makeButton("ESP Hook: OFF", scroll)
-espHookBtn.MouseButton1Click:Connect(function()
-	espStates.hook = not espStates.hook
-	espHookBtn.Text = espStates.hook and "ESP Hook: ON" or "ESP Hook: OFF"
-	espHookBtn.BackgroundColor3 = espStates.hook and Color3.fromRGB(0,100,0) or Color3.fromRGB(44,44,44)
-	refreshESP()
-end)
-
--- Clear All ESP
-makeButton("Clear All ESP", scroll, Color3.fromRGB(80,50,50)).MouseButton1Click:Connect(function()
-	espStates.generator = false
-	espStates.players = false
-	espStates.killer = false
-	espStates.hook = false
-	espStates.lane = false
-	
-	espGenBtn.Text = "ESP Generator: OFF"
-	espGenBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	espPlayerBtn.Text = "ESP Players: OFF"
-	espPlayerBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	espLaneBtn.Text = "ESP Lane: OFF"
-	espLaneBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	espKillerBtn.Text = "ESP Killer: OFF"
-	espKillerBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	espHookBtn.Text = "ESP Hook: OFF"
-	espHookBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	
-	clearHighlights()
-	espLineEnabled = false
-end)
-
--- ==================== ANTI DAMAGE BUTTON ====================
-local antiDamageBtn = makeButton("Anti Damage: OFF", scroll)
-antiDamageBtn.MouseButton1Click:Connect(function()
-	antiDamageEnabled = not antiDamageEnabled
-	
-	if antiDamageEnabled then
-		setupAntiDamage()
-		antiDamageBtn.Text = "Anti Damage: ON"
-		antiDamageBtn.BackgroundColor3 = Color3.fromRGB(0,100,0)
-	else
-		disableAntiDamage()
-		antiDamageBtn.Text = "Anti Damage: OFF"
-		antiDamageBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	end
-end)
-
--- ==================== ANTI STUN BUTTON (UPGRADE) ====================
-local antiStunBtn = makeButton("Anti Stun: OFF", scroll)
-antiStunBtn.MouseButton1Click:Connect(function()
-	antiStunEnabled = not antiStunEnabled
-	
-	if antiStunEnabled then
-		setupAntiStun()
-		antiStunBtn.Text = "Anti Stun: ON"
-		antiStunBtn.BackgroundColor3 = Color3.fromRGB(0,100,0)
-	else
-		disableAntiStun()
-		antiStunBtn.Text = "Anti Stun: OFF"
-		antiStunBtn.BackgroundColor3 = Color3.fromRGB(44,44,44)
-	end
-end)
-
--- ==================== FITUR LAINNYA ====================
-makeButton("To Generator (Random)", scroll).MouseButton1Click:Connect(function()
-	local matches = collectGenerators()
-	if #matches > 0 then safeTeleportTo(matches[math.random(1,#matches)]) end
-end)
-
-makeButton("To Hook (Random)", scroll).MouseButton1Click:Connect(function()
-	local matches = collectHooks()
-	if #matches > 0 then safeTeleportTo(matches[math.random(1,#matches)]) end
-end)
-
-makeButton("To Player (Random)", scroll).MouseButton1Click:Connect(function()
-	local pool = {}
-	for _,pl in ipairs(Players:GetPlayers()) do
-		if pl ~= player and pl.Character and pl.Character:FindFirstChild("HumanoidRootPart") then
-			table.insert(pool, pl)
-		end
-	end
-	if #pool > 0 then
-		local target = pool[math.random(1,#pool)]
-		local hrp = target.Character:FindFirstChild("HumanoidRootPart")
-		if hrp then safeTeleportTo(hrp) end
-	end
-end)
-
-makeButton("Heal", scroll).MouseButton1Click:Connect(function()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if hum then hum.Health = hum.MaxHealth end
-end)
-
-makeButton("Speed50", scroll).MouseButton1Click:Connect(function()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if hum then hum.WalkSpeed = 50 end
-end)
-
-makeButton("Animx2", scroll).MouseButton1Click:Connect(function()
-	local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-	if hum and hum:FindFirstChild("Animator") then
-		for _,t in ipairs(hum.Animator:GetPlayingAnimationTracks()) do
-			t:AdjustSpeed(2)
-		end
-	end
-end)
-
-makeButton("ShiftLock", scroll).MouseButton1Click:Connect(function()
-	UserInputService.MouseBehavior = Enum.MouseBehavior.LockCenter
-	UserInputService.MouseIconEnabled = false
-	local conn = RunService.RenderStepped:Connect(function()
-		local hrp = player.Character and player.Character:FindFirstChild("HumanoidRootPart")
-		if hrp and camera then
-			local look = Vector3.new(camera.CFrame.LookVector.X,0,camera.CFrame.LookVector.Z)
-			if look.Magnitude>0.001 then hrp.CFrame = CFrame.new(hrp.Position, hrp.Position + look) end
-		end
-	end)
-	delay(8,function()
-		if conn and conn.Connected then conn:Disconnect() end
-		UserInputService.MouseBehavior = Enum.MouseBehavior.Default
-		UserInputService.MouseIconEnabled = true
-	end)
-end)
-
--- Noclip
-local noclipConn = nil
-makeButton("Noclip", scroll).MouseButton1Click:Connect(function()
-	if noclipConn then 
-		noclipConn:Disconnect()
-		noclipConn = nil
-	else
-		noclipConn = RunService.Stepped:Connect(function()
-			if player.Character then
-				for _,p in ipairs(player.Character:GetDescendants()) do
-					if p:IsA("BasePart") then p.CanCollide = false end
-				end
-			end
-		end)
-	end
-end)
-
-makeButton("NoHitbox", scroll).MouseButton1Click:Connect(function()
-	local c = player.Character
-	if not c then return end
-	for _,p in ipairs(c:GetDescendants()) do
-		if p:IsA("BasePart") then p.CanTouch = false end
-	end
-end)
-
--- SmartHitbox
-local smartProxies = {}
-makeButton("SmartHitbox", scroll).MouseButton1Click:Connect(function()
-	for _,pl in ipairs(Players:GetPlayers()) do
-		local nm = string.lower(pl.Name or "")
-		if pl ~= player and pl.Character and (killerNames[nm] or string.find(nm,"killer")) then
-			local hrp = pl.Character:FindFirstChild("HumanoidRootPart")
-			if hrp and not smartProxies[pl] then
-				local proxy = Instance.new("Part")
-				proxy.Name = "SmartHitboxProxy"
-				proxy.Size = Vector3.new(3,3,3)
-				proxy.Transparency = 1
-				proxy.CanCollide = false
-				proxy.Anchored = false
-				proxy.Massless = true
-				proxy.CFrame = hrp.CFrame
-				proxy.Parent = Workspace
-				local weld = Instance.new("WeldConstraint")
-				weld.Part0 = proxy
-				weld.Part1 = hrp
-				weld.Parent = proxy
-				smartProxies[pl] = proxy
-			end
-		end
-	end
-end)
-
-makeButton("NoShadow", scroll).MouseButton1Click:Connect(function()
-	for _,v in ipairs(Lighting:GetDescendants()) do
-		if v:IsA("ShadowMapLight") or v:IsA("SpotLight") or v:IsA("PointLight") or v:IsA("DirectionalLight") then
-			v.Shadows=false
-		end
-	end
-	Lighting.GlobalShadows=false
-end)
-
-makeButton("Morning", scroll).MouseButton1Click:Connect(function()
-	Lighting.ClockTime=7
-end)
-
-makeButton("Afternoon", scroll).MouseButton1Click:Connect(function()
-	Lighting.ClockTime=17
-end)
-
-makeButton("SpawnJump", scroll).MouseButton1Click:Connect(function()
-	if screenGui:FindFirstChild("JumpButton") then return end
-	local jb = Instance.new("TextButton", screenGui)
-	jb.Name="JumpButton"
-	jb.Size=UDim2.new(0,80,0,44)
-	jb.Position=UDim2.new(1,-98,1,-68)
-	jb.AnchorPoint=Vector2.new(1,1)
-	jb.BackgroundColor3=Color3.fromRGB(48,48,48)
-	jb.Font=Enum.Font.GothamBold
-	jb.Text="Jump"
-	jb.TextColor3=Color3.fromRGB(240,240,240)
-	Instance.new("UICorner", jb).CornerRadius=UDim.new(0,8)
-	jb.MouseButton1Click:Connect(function()
-		local hum = player.Character and player.Character:FindFirstChildOfClass("Humanoid")
-		if hum then hum.Jump=true end
-	end)
-end)
-
-local invisibleMapEnabled = false
-makeButton("FastCooldown", scroll).MouseButton1Click:Connect(function()
-	for _, plr in ipairs(Players:GetPlayers()) do
-		if plr.Character then
-			local cds = plr.Character:FindFirstChild("Cooldowns")
-			if cds then
-				for _,v in ipairs(cds:GetChildren()) do
-					if v:IsA("NumberValue") then
-						v.Value = 0
-					end
-				end
-			end
-		end
-	end
-end)
-
-makeButton("Get Off Sling", scroll).MouseButton1Click:Connect(function()
-	local char = player.Character
-	if not char then return end
-	for _,joint in ipairs(char:GetDescendants()) do
-		if joint:IsA("HingeConstraint") or joint:IsA("RodConstraint") then
-			joint.Enabled = false
-		end
-	end
-	local seat = char:FindFirstChildWhichIsA("VehicleSeat", true)
-	if seat then
-		local hum = char:FindFirstChildOfClass("Humanoid")
-		if hum then hum.Sit = false end
-	end
-end)
-
-local noFogEnabled = false
-makeButton("No Fog", scroll).MouseButton1Click:Connect(function()
-	noFogEnabled = not noFogEnabled
-	if noFogEnabled then
-		Lighting.FogStart = 0
-		Lighting.FogEnd = 100000
-	else
-		Lighting.FogStart = 0
-		Lighting.FogEnd = 1000
-	end
-end)
-
-makeButton("Invisible Map", scroll).MouseButton1Click:Connect(function()
-	invisibleMapEnabled = not invisibleMapEnabled
-	for _,v in ipairs(Workspace:GetDescendants()) do
-		if v:IsA("BasePart") and not v:IsDescendantOf(player.Character) then
-			v.LocalTransparencyModifier = invisibleMapEnabled and 1 or 0
-		end
-	end
-end)
-
-makeButton("ClearHL", scroll).MouseButton1Click:Connect(function()
-	clearHighlights()
-end)
-
--- Minimize Button
-local minimizeBtn = Instance.new("TextButton", main)
-minimizeBtn.Size = UDim2.new(0,28,0,24)
-minimizeBtn.Position = UDim2.new(1,-34,0,6)
-minimizeBtn.BackgroundColor3=Color3.fromRGB(55,55,55)
-minimizeBtn.Text="—"
-minimizeBtn.Font=Enum.Font.GothamBold
-minimizeBtn.TextSize=14
-minimizeBtn.TextColor3=Color3.fromRGB(230,230,230)
-Instance.new("UICorner", minimizeBtn).CornerRadius=UDim.new(0,6)
-
-local isMin=false
-minimizeBtn.MouseButton1Click:Connect(function()
-	isMin=not isMin
-	if isMin then
-		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,140,0,40)}):Play()
-		scroll.Visible=false
-		title.Text="VD PZ"
-	else
-		TweenService:Create(main,TweenInfo.new(0.25),{Size=UDim2.new(0,190,0,460)}):Play()
-		scroll.Visible=true
-		title.Text="VD Putzzdev"
-	end
-end)
-
-player.AncestryChanged:Connect(function()
-	if not player:IsDescendantOf(game) and screenGui then screenGui:Destroy() end
-end)
-
-player.CharacterRemoving:Connect(function()
-	for _,p in pairs(smartProxies) do if p and p.Parent then p:Destroy() end end
-	smartProxies={}
-	if noclipConn then noclipConn:Disconnect() noclipConn = nil end
-	disableAntiDamage()
-	disableAntiStun()
-	espLineEnabled = false
-	for _, line in pairs(espLines) do
-		pcall(function() line:Remove() end)
-	end
-	espLines = {}
-end)
-
-print("VD Putzzdev Ve")
+print("VD Putzzdev Rayfield Edition with Auto Repair loaded")
