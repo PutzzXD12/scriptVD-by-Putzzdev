@@ -1,6 +1,6 @@
 -- ============================================
--- VD PUTZZDEV | RAYFIELD EDITION
--- Fitur lengkap + Auto Repair Generator
+-- VD PUTZZDEV | RAYFIELD EDITION (FIX AUTO REPAIR)
+-- Fitur: Auto Repair sampai semua generator selesai
 -- ============================================
 
 local Players = game:GetService("Players")
@@ -37,6 +37,7 @@ local espLineColor = Color3.fromRGB(255,255,255)
 -- Auto Repair
 local autoRepairEnabled = false
 local autoRepairThread = nil
+local autoSkillCheckEnabled = false
 
 -- ==================== FUNGSI UTILITY ====================
 local function findRootForDesc(desc)
@@ -70,7 +71,7 @@ local function clearHighlights()
     highlights = {}
 end
 
--- Generator & Hook collection (sama seperti asli)
+-- Generator & Hook collection
 local generatorNames = {["generator"]=true,["generator_old"]=true,["gene"]=true}
 local hookNames = {["hookpoint"]=true,["hook"]=true,["hookmeat"]=true}
 local generatorPrefix = "ge"
@@ -151,7 +152,6 @@ local function updateESPLine()
     end
 end
 
--- Inisialisasi ESP Line
 for _, p in pairs(Players:GetPlayers()) do createESPLine(p) end
 Players.PlayerAdded:Connect(createESPLine)
 Players.PlayerRemoving:Connect(function(p)
@@ -162,7 +162,7 @@ Players.PlayerRemoving:Connect(function(p)
 end)
 RunService.RenderStepped:Connect(updateESPLine)
 
--- ==================== ANTI DAMAGE (DRIP) ==================
+-- ==================== ANTI DAMAGE ==================
 local function setupAntiDamage()
     if antiConn then antiConn:Disconnect() end
     antiConn = RunService.Heartbeat:Connect(function()
@@ -180,40 +180,119 @@ local function disableAntiDamage()
     if antiConn then antiConn:Disconnect() antiConn = nil end
 end
 
--- ==================== AUTO REPAIR GENERATOR ==================
+-- ==================== AUTO SKILL CHECK (Biar GAGAL PROOF) ==================
+local function setupAutoSkillCheck()
+    -- Hook ke remote event skill check (jika ada)
+    local remote = ReplicatedStorage:FindFirstChild("SkillCheck") or ReplicatedStorage:FindFirstChild("GeneratorSkillCheck")
+    if remote then
+        local oldFunction
+        oldFunction = remote.OnClientEvent
+        remote.OnClientEvent = function(...)
+            local args = {...}
+            -- Otomatis sukses dengan mengirim respon sukses
+            local successRemote = ReplicatedStorage:FindFirstChild("SkillCheckResult")
+            if successRemote then
+                successRemote:FireServer(true) -- true = sukses
+            end
+            if oldFunction then oldFunction(...) end
+        end
+    end
+end
+
+-- ==================== AUTO REPAIR GENERATOR (SAMPAI SELESAI) ==================
 local function repairGenerator(genPart)
+    if not genPart then return false end
     -- Coba berbagai metode interaksi
+    local success = false
+    -- 1. Remote event
     local remote = ReplicatedStorage:FindFirstChild("RemoteEvent") or
                    ReplicatedStorage:FindFirstChild("Interact") or
                    ReplicatedStorage:FindFirstChild("Repair")
     if remote then
         pcall(function() remote:FireServer("Interact", genPart) end)
         pcall(function() remote:FireServer(genPart) end)
+        success = true
     end
+    -- 2. ProximityPrompt
     local prompt = genPart:FindFirstChildWhichIsA("ProximityPrompt")
     if not prompt and genPart.Parent then prompt = genPart.Parent:FindFirstChildWhichIsA("ProximityPrompt") end
-    if prompt then pcall(function() prompt:InputHoldBegin() end) end
+    if prompt then
+        pcall(function() 
+            prompt:InputHoldBegin()
+            -- Simulasi hold selama 2 detik (agar repair jalan)
+            task.wait(2)
+            prompt:InputHoldEnd()
+        end)
+        success = true
+    end
+    -- 3. ClickDetector
     local click = genPart:FindFirstChildWhichIsA("ClickDetector")
-    if click then pcall(function() click:Click() end) end
+    if click then
+        pcall(function() click:Click() end)
+        success = true
+    end
+    return success
+end
+
+-- Fungsi untuk mengecek apakah generator masih ada / belum selesai
+local function isGeneratorActive(genPart)
+    if not genPart or not genPart.Parent then return false end
+    -- Cek apakah masih memiliki prompt atau partikel (indikator belum selesai)
+    local prompt = genPart:FindFirstChildWhichIsA("ProximityPrompt")
+    if not prompt and genPart.Parent then prompt = genPart.Parent:FindFirstChildWhichIsA("ProximityPrompt") end
+    if prompt and prompt.Enabled then
+        return true
+    end
+    -- Jika tidak ada prompt, mungkin sudah selesai
+    return false
 end
 
 local function autoRepairLoop()
     while autoRepairEnabled do
-        local generators = collectGenerators()
-        if #generators == 0 then
-            task.wait(1)
-            -- Mungkin semua generator sudah selesai? Kita tetap lanjut cek
-        else
-            for _, gen in ipairs(generators) do
-                if not autoRepairEnabled then break end
-                safeTeleportTo(gen)
-                task.wait(0.3)
-                repairGenerator(gen)
-                task.wait(1) -- waktu repair
+        -- Kumpulkan generator yang masih aktif
+        local allGens = collectGenerators()
+        local activeGens = {}
+        for _, gen in ipairs(allGens) do
+            if isGeneratorActive(gen) then
+                table.insert(activeGens, gen)
             end
         end
-        task.wait(0.5)
+        
+        if #activeGens == 0 then
+            Rayfield:Notify({Title = "Auto Repair", Content = "Semua generator selesai!", Duration = 3})
+            autoRepairEnabled = false
+            break
+        end
+        
+        -- Proses satu per satu
+        for _, gen in ipairs(activeGens) do
+            if not autoRepairEnabled then break end
+            
+            -- Teleport ke generator
+            safeTeleportTo(gen)
+            task.wait(0.5)
+            
+            -- Mulai repair
+            repairGenerator(gen)
+            
+            -- Tunggu sampai generator ini selesai (atau maksimal 30 detik)
+            local startTime = tick()
+            while isGeneratorActive(gen) and (tick() - startTime) < 30 do
+                task.wait(1)
+                -- Ulangi repair setiap 2 detik agar tetap interaksi
+                if (tick() - startTime) % 2 < 0.5 then
+                    repairGenerator(gen)
+                end
+            end
+            
+            -- Notifikasi jika selesai
+            if not isGeneratorActive(gen) then
+                Rayfield:Notify({Title = "Auto Repair", Content = "Generator selesai!", Duration = 2})
+            end
+            task.wait(0.5)
+        end
     end
+    autoRepairThread = nil
 end
 
 -- ==================== GUI RAYFIELD ==================
@@ -221,14 +300,13 @@ local Window = Rayfield:CreateWindow({
     Name = "VD Putzzdev",
     Icon = 0,
     LoadingTitle = "Violence District",
-    LoadingSubtitle = "Rayfield Edition",
+    LoadingSubtitle = "Rayfield",
     Theme = "Dark",
     ToggleUIKeybind = "K",
 })
 
 -- Tab: ESP
 local ESPTab = Window:CreateTab("ESP", nil)
-
 ESPTab:CreateSection("Highlight ESP")
 
 local espGen = false
@@ -329,7 +407,6 @@ ESPTab:CreateButton({
         clearHighlights()
         espGen = false; espPlayers = false; espKiller = false; espHook = false
         espLineEnabled = false
-        -- Reset toggle visual di Rayfield? Tidak ada API, biarkan user matikan manual
         Rayfield:Notify({Title = "ESP", Content = "All ESP cleared", Duration = 2})
     end
 })
@@ -380,6 +457,17 @@ AutoTab:CreateToggle({
         else
             if autoRepairThread then task.cancel(autoRepairThread) end
             autoRepairThread = nil
+        end
+    end
+})
+AutoTab:CreateToggle({
+    Name = "Auto Skill Check (No Fail)",
+    CurrentValue = false,
+    Callback = function(v)
+        autoSkillCheckEnabled = v
+        if v then
+            setupAutoSkillCheck()
+            Rayfield:Notify({Title = "Auto Skill Check", Content = "Aktif, repair tidak akan gagal", Duration = 3})
         end
     end
 })
@@ -622,8 +710,8 @@ UtilTab:CreateButton({
 -- Notifikasi siap
 Rayfield:Notify({
     Title = "VD Putzzdev",
-    Content = "Rayfield Edition loaded. Press K to toggle GUI",
+    Content = "mes",
     Duration = 5
 })
 
-print("VD Putzzdev Rayfield Edition with Auto Repair loaded")
+print("VD Putzzdev Rayfield")
